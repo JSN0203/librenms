@@ -768,10 +768,20 @@ class Vrp extends OS implements
                 }
             }
         }
+        
+        
 
         $portsData = SnmpQuery::walk('HUAWEI-L2IF-MIB::hwL2IfPVID')->table(1);
         foreach ($portsData as $baseport => $data) {
             if (! empty($data['HUAWEI-L2IF-MIB::hwL2IfPVID'])) {
+                if ($ports->contains('baseport', $baseport)) { // check if port already has tagged vlans
+                    if (isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListLow']) || isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListHigh'])) { //check if port is trunk 
+                        $vlan_tagged = $ports->where('baseport', $baseport)->pluck('vlan');
+                        if ($vlan_tagged->doesntContains($data['HUAWEI-L2IF-MIB::hwL2IfPVID'])) {
+                            continue; // skip if pvid is not tagged on trunk port
+                        }
+                    }
+                } 
                 $ports->push(new PortVlan([
                     'vlan' => $data['HUAWEI-L2IF-MIB::hwL2IfPVID'],
                     'baseport' => $baseport,

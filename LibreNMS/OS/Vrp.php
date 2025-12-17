@@ -770,10 +770,26 @@ class Vrp extends OS implements
         }
 
         $portsData = SnmpQuery::walk('HUAWEI-L2IF-MIB::hwL2IfPVID')->table(1);
+
+        // build an array of tagged vlans by port for easier lookup
+        $vlansByPort = [];
+        foreach ($ports as $portVlan) {
+            $vlansByPort[$portVlan->baseport][] = $portVlan->vlan;
+        }
+
         foreach ($portsData as $baseport => $data) {
-            if (! empty($data['HUAWEI-L2IF-MIB::hwL2IfPVID'])) {
+            $pvid = $data['HUAWEI-L2IF-MIB::hwL2IfPVID'] ?? null;
+
+            if (! empty($pvid)) {
+                if (isset($vlansByPort[$baseport])) { // check if we have tagged vlans on port
+                    if (isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListLow']) || isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListHigh'])) { // check if port link-type is trunk
+                        if (!in_array($pvid, $vlansByPort[$baseport], true)) {
+                            continue; // skip adding entry if pvid is not in tagged vlans on trunk port
+                        }
+                    }
+                } 
                 $ports->push(new PortVlan([
-                    'vlan' => $data['HUAWEI-L2IF-MIB::hwL2IfPVID'],
+                    'vlan' => $pvid,
                     'baseport' => $baseport,
                     'untagged' => 1,
                     'port_id' => PortCache::getIdFromIfIndex($portsIndexes[$baseport] ?? 0, $this->getDeviceId()) ?? 0, // ifIndex from device

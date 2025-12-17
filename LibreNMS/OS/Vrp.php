@@ -770,18 +770,26 @@ class Vrp extends OS implements
         }
 
         $portsData = SnmpQuery::walk('HUAWEI-L2IF-MIB::hwL2IfPVID')->table(1);
+
+        // build an array of tagged vlans by port for quick lookup
+        $taggedVlansByPort = [];
+        foreach ($ports as $portVlan) {
+            $taggedVlansByPort[$portVlan->baseport][] = $portVlan->vlan;
+        }
+
         foreach ($portsData as $baseport => $data) {
-            if (! empty($data['HUAWEI-L2IF-MIB::hwL2IfPVID'])) {
-                if ($ports->contains('baseport', $baseport)) { // check if port already has tagged vlans
-                    if (isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListLow']) || isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListHigh'])) { //check if port is trunk 
-                        $vlan_tagged = $ports->where('baseport', $baseport)->pluck('vlan');
-                        if ($vlan_tagged->doesntContain($data['HUAWEI-L2IF-MIB::hwL2IfPVID'])) {
-                            continue; // skip if pvid is not tagged on trunk port
+            $pvid = $data['HUAWEI-L2IF-MIB::hwL2IfPVID'] ?? null;
+
+            if (! empty($pvid)) {
+                if (isset($taggedVlansByPort[$baseport])) { // check if we have tagged vlans on port
+                    if (isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListLow']) || isset($tagged[$baseport]['HUAWEI-L2IF-MIB::hwL2IfTrunkAllowPassVlanListHigh'])) { // check if port is trunk
+                        if (!in_array($pvid, $taggedVlansByPort[$baseport], true)) {
+                            continue; // skip adding entry if pvid is not in tagged vlans on trunk port
                         }
                     }
                 } 
                 $ports->push(new PortVlan([
-                    'vlan' => $data['HUAWEI-L2IF-MIB::hwL2IfPVID'],
+                    'vlan' => $pvid,
                     'baseport' => $baseport,
                     'untagged' => 1,
                     'port_id' => PortCache::getIdFromIfIndex($portsIndexes[$baseport] ?? 0, $this->getDeviceId()) ?? 0, // ifIndex from device
